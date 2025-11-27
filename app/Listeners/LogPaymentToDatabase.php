@@ -19,7 +19,7 @@ class LogPaymentToDatabase
         try {
             // TODO: En producción, usar un modelo Payment con Eloquent
             // Por ahora, simulamos el guardado
-            
+
             $paymentData = [
                 'order_id' => $event->orderId,
                 'payment_id' => $event->result->paymentId,
@@ -64,7 +64,7 @@ class LogPaymentToDatabase
                 'order_id' => $event->orderId,
                 'error' => $e->getMessage(),
             ]);
-            
+
             // Re-lanzar la excepción si es crítico que esto se guarde
             // throw $e;
         }

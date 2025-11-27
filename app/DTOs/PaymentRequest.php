@@ -17,4 +17,3 @@ class PaymentRequest
         public readonly ?PaymentMethod $paymentMethod = null,
     ) {}
 }
-

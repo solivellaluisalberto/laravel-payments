@@ -8,4 +8,3 @@ enum PaymentType: string
     case REDIRECT = 'redirect';
     case ALTERNATIVE = 'alternative';
 }
-

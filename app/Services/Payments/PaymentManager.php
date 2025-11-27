@@ -18,7 +18,7 @@ class PaymentManager
             return $this->gateways[$provider->value];
         }
 
-        $gateway = match($provider) {
+        $gateway = match ($provider) {
             PaymentProvider::STRIPE => $this->createStripeGateway(),
             PaymentProvider::REDSYS => $this->createRedsysGateway(),
             PaymentProvider::PAYPAL => $this->createPayPalGateway(),
@@ -26,7 +26,7 @@ class PaymentManager
         };
 
         $this->gateways[$provider->value] = $gateway;
-        
+
         return $gateway;
     }
 
@@ -65,4 +65,3 @@ class PaymentManager
         );
     }
 }
-

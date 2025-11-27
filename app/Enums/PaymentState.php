@@ -12,7 +12,7 @@ enum PaymentState: string
 
     public function label(): string
     {
-        return match($this) {
+        return match ($this) {
             self::PENDING => 'Pendiente',
             self::COMPLETED => 'Completado',
             self::FAILED => 'Fallido',
@@ -20,10 +20,10 @@ enum PaymentState: string
             self::CANCELLED => 'Cancelado',
         };
     }
-    
+
     public function color(): string
     {
-        return match($this) {
+        return match ($this) {
             self::PENDING => 'yellow',
             self::COMPLETED => 'green',
             self::FAILED => 'red',
@@ -42,4 +42,3 @@ enum PaymentState: string
         ]);
     }
 }
-

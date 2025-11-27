@@ -13,4 +13,3 @@ class PaymentResult
         public readonly array $data = [],
     ) {}
 }
-

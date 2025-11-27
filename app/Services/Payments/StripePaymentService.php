@@ -6,8 +6,8 @@ use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
 use App\Enums\PaymentType;
-use Stripe\StripeClient;
 use Stripe\Exception\ApiErrorException;
+use Stripe\StripeClient;
 
 class StripePaymentService implements PaymentGateway
 {
@@ -17,13 +17,13 @@ class StripePaymentService implements PaymentGateway
     {
         $key = $apiKey ?? config('payments.stripe.secret_key');
 
-        if (!$key) {
+        if (! $key) {
             throw new \Exception(
-                'Stripe API key not configured. ' .
+                'Stripe API key not configured. '.
                 'Set STRIPE_SECRET_KEY in .env or pass it to constructor.'
             );
         }
-        
+
         $this->stripe = new StripeClient($key);
     }
 
@@ -31,7 +31,7 @@ class StripePaymentService implements PaymentGateway
     {
         try {
             $paymentIntent = $this->stripe->paymentIntents->create([
-                'amount' => (int)($request->amount * 100), // Convertir a centavos
+                'amount' => (int) ($request->amount * 100), // Convertir a centavos
                 'currency' => strtolower($request->currency),
                 'metadata' => array_merge($request->metadata, [
                     'order_id' => $request->orderId,
@@ -51,7 +51,7 @@ class StripePaymentService implements PaymentGateway
                 clientSecret: $paymentIntent->client_secret
             );
         } catch (ApiErrorException $e) {
-            throw new \Exception('Error creating Stripe payment: ' . $e->getMessage());
+            throw new \Exception('Error creating Stripe payment: '.$e->getMessage());
         }
     }
 
@@ -74,13 +74,13 @@ class StripePaymentService implements PaymentGateway
                 success: false,
                 status: $intent->status,
                 paymentId: $paymentId,
-                message: 'Payment not completed. Current status: ' . $intent->status
+                message: 'Payment not completed. Current status: '.$intent->status
             );
         } catch (ApiErrorException $e) {
             return new PaymentResult(
                 success: false,
                 status: 'error',
-                message: 'Error capturing payment: ' . $e->getMessage()
+                message: 'Error capturing payment: '.$e->getMessage()
             );
         }
     }
@@ -90,7 +90,7 @@ class StripePaymentService implements PaymentGateway
         try {
             // Determinar si es un payment_intent o un charge
             $refundData = [];
-            
+
             if (str_starts_with($paymentId, 'pi_')) {
                 // Es un Payment Intent ID
                 $refundData['payment_intent'] = $paymentId;
@@ -101,9 +101,9 @@ class StripePaymentService implements PaymentGateway
                 // Asumir que es un Payment Intent
                 $refundData['payment_intent'] = $paymentId;
             }
-            
+
             if ($amount !== null) {
-                $refundData['amount'] = (int)($amount * 100);
+                $refundData['amount'] = (int) ($amount * 100);
             }
 
             $refund = $this->stripe->refunds->create($refundData);
@@ -120,13 +120,13 @@ class StripePaymentService implements PaymentGateway
             return new PaymentResult(
                 success: false,
                 status: $refund->status,
-                message: 'Refund status: ' . $refund->status
+                message: 'Refund status: '.$refund->status
             );
         } catch (ApiErrorException $e) {
             return new PaymentResult(
                 success: false,
                 status: 'error',
-                message: 'Error processing refund: ' . $e->getMessage()
+                message: 'Error processing refund: '.$e->getMessage()
             );
         }
     }
@@ -151,7 +151,7 @@ class StripePaymentService implements PaymentGateway
             return new PaymentResult(
                 success: false,
                 status: 'error',
-                message: 'Error retrieving payment status: ' . $e->getMessage()
+                message: 'Error retrieving payment status: '.$e->getMessage()
             );
         }
     }
@@ -169,4 +169,3 @@ class StripePaymentService implements PaymentGateway
         );
     }
 }
-

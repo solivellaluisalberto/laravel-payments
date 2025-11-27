@@ -17,17 +17,18 @@ class SendPaymentConfirmationEmail
     public function handle(PaymentCompleted $event): void
     {
         // Si no hay email del cliente, no podemos enviar nada
-        if (!$event->customerEmail) {
+        if (! $event->customerEmail) {
             Log::info('Payment completed but no customer email provided', [
                 'order_id' => $event->orderId,
             ]);
+
             return;
         }
 
         try {
             // TODO: En producción, implementar con Mail::send() y una vista
             // Por ahora, solo simulamos el envío
-            
+
             $emailData = [
                 'customer_email' => $event->customerEmail,
                 'order_id' => $event->orderId,

@@ -11,7 +11,7 @@ enum PaymentProvider: string
 
     public function label(): string
     {
-        return match($this) {
+        return match ($this) {
             self::STRIPE => 'Stripe',
             self::REDSYS => 'Redsys',
             self::PAYPAL => 'PayPal',
@@ -19,4 +19,3 @@ enum PaymentProvider: string
         };
     }
 }
-

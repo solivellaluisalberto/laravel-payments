@@ -11,7 +11,7 @@ use Illuminate\Queue\SerializesModels;
 
 /**
  * Evento que se dispara cuando un pago se completa exitosamente
- * 
+ *
  * Este evento es agnóstico del proveedor de pago, permitiendo
  * ejecutar acciones comunes sin importar si fue Stripe, Redsys o PayPal
  */
@@ -45,7 +45,7 @@ class PaymentCompleted
             new PrivateChannel('payments'),
         ];
     }
-    
+
     /**
      * Obtener datos del pago para logging/notificaciones
      */

@@ -7,10 +7,10 @@ use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
 use App\Enums\PaymentType;
 use PayPalCheckoutSdk\Core\PayPalHttpClient;
-use PayPalCheckoutSdk\Core\SandboxEnvironment;
 use PayPalCheckoutSdk\Core\ProductionEnvironment;
-use PayPalCheckoutSdk\Orders\OrdersCreateRequest;
+use PayPalCheckoutSdk\Core\SandboxEnvironment;
 use PayPalCheckoutSdk\Orders\OrdersCaptureRequest;
+use PayPalCheckoutSdk\Orders\OrdersCreateRequest;
 use PayPalCheckoutSdk\Orders\OrdersGetRequest;
 use PayPalCheckoutSdk\Payments\CapturesRefundRequest;
 use PayPalHttp\HttpException;
@@ -18,6 +18,7 @@ use PayPalHttp\HttpException;
 class PayPalPaymentService implements PaymentGateway
 {
     private PayPalHttpClient $client;
+
     private string $environment;
 
     public function __construct(
@@ -29,54 +30,54 @@ class PayPalPaymentService implements PaymentGateway
         $clientSecret = $clientSecret ?? config('payments.paypal.client_secret');
         $this->environment = $environment ?? config('payments.paypal.environment', 'sandbox');
 
-        if (!$clientId) {
+        if (! $clientId) {
             throw new \Exception(
-                'PayPal Client ID not configured. ' .
+                'PayPal Client ID not configured. '.
                 'Set PAYPAL_CLIENT_ID in .env or pass it to constructor.'
             );
         }
-        if (!$clientSecret) {
+        if (! $clientSecret) {
             throw new \Exception(
-                'PayPal Client Secret not configured. ' .
+                'PayPal Client Secret not configured. '.
                 'Set PAYPAL_CLIENT_SECRET in .env or pass it to constructor.'
             );
         }
-        
+
         $env = $this->environment === 'live'
             ? new ProductionEnvironment($clientId, $clientSecret)
             : new SandboxEnvironment($clientId, $clientSecret);
-        
+
         $this->client = new PayPalHttpClient($env);
     }
 
     public function initiate(PaymentRequest $request): PaymentResponse
     {
         try {
-            $paypalRequest = new OrdersCreateRequest();
+            $paypalRequest = new OrdersCreateRequest;
             $paypalRequest->prefer('return=representation');
-            
+
             $paypalRequest->body = [
                 'intent' => 'CAPTURE',
                 'purchase_units' => [[
                     'reference_id' => $request->orderId,
                     'amount' => [
                         'currency_code' => strtoupper($request->currency),
-                        'value' => number_format($request->amount, 2, '.', '')
+                        'value' => number_format($request->amount, 2, '.', ''),
                     ],
-                    'description' => $request->metadata['description'] ?? 'Order ' . $request->orderId,
+                    'description' => $request->metadata['description'] ?? 'Order '.$request->orderId,
                 ]],
                 'application_context' => [
-                    'cancel_url' => $request->cancelUrl ?? config('app.url') . '/payments/paypal/cancel',
-                    'return_url' => $request->returnUrl ?? config('app.url') . '/payments/paypal/return',
+                    'cancel_url' => $request->cancelUrl ?? config('app.url').'/payments/paypal/cancel',
+                    'return_url' => $request->returnUrl ?? config('app.url').'/payments/paypal/return',
                     'brand_name' => config('app.name'),
                     'locale' => 'es-ES',
                     'landing_page' => 'BILLING',
                     'user_action' => 'PAY_NOW',
-                ]
+                ],
             ];
 
             $response = $this->client->execute($paypalRequest);
-            
+
             // Buscar el link de aprobación
             $approveLink = null;
             foreach ($response->result->links as $link) {
@@ -97,7 +98,7 @@ class PayPalPaymentService implements PaymentGateway
                 redirectUrl: $approveLink
             );
         } catch (HttpException $e) {
-            throw new \Exception('PayPal API Error: ' . $e->getMessage());
+            throw new \Exception('PayPal API Error: '.$e->getMessage());
         }
     }
 
@@ -106,23 +107,23 @@ class PayPalPaymentService implements PaymentGateway
         try {
             $request = new OrdersCaptureRequest($paymentId);
             $request->prefer('return=representation');
-            
+
             $response = $this->client->execute($request);
-            
+
             $success = $response->result->status === 'COMPLETED';
-            
+
             return new PaymentResult(
                 success: $success,
                 status: $success ? 'completed' : $response->result->status,
                 paymentId: $paymentId,
                 transactionId: $response->result->purchase_units[0]->payments->captures[0]->id ?? null,
-                message: $success ? 'Payment captured successfully' : 'Payment status: ' . $response->result->status
+                message: $success ? 'Payment captured successfully' : 'Payment status: '.$response->result->status
             );
         } catch (HttpException $e) {
             return new PaymentResult(
                 success: false,
                 status: 'error',
-                message: 'Error capturing PayPal payment: ' . $e->getMessage()
+                message: 'Error capturing PayPal payment: '.$e->getMessage()
             );
         }
     }
@@ -133,41 +134,41 @@ class PayPalPaymentService implements PaymentGateway
             // Primero obtener el capture ID
             $orderRequest = new OrdersGetRequest($paymentId);
             $orderResponse = $this->client->execute($orderRequest);
-            
+
             $captureId = $orderResponse->result->purchase_units[0]->payments->captures[0]->id ?? null;
-            
-            if (!$captureId) {
+
+            if (! $captureId) {
                 throw new \Exception('No capture found for this payment');
             }
-            
+
             // Crear el refund
             $request = new CapturesRefundRequest($captureId);
             $request->prefer('return=representation');
-            
+
             if ($amount !== null) {
                 $request->body = [
                     'amount' => [
                         'value' => number_format($amount, 2, '.', ''),
-                        'currency_code' => 'EUR'
-                    ]
+                        'currency_code' => 'EUR',
+                    ],
                 ];
             }
-            
+
             $response = $this->client->execute($request);
-            
+
             $success = $response->result->status === 'COMPLETED';
-            
+
             return new PaymentResult(
                 success: $success,
                 status: $success ? 'refunded' : $response->result->status,
                 transactionId: $response->result->id,
-                message: $success ? 'Refund processed successfully' : 'Refund status: ' . $response->result->status
+                message: $success ? 'Refund processed successfully' : 'Refund status: '.$response->result->status
             );
         } catch (HttpException $e) {
             return new PaymentResult(
                 success: false,
                 status: 'error',
-                message: 'Error processing PayPal refund: ' . $e->getMessage()
+                message: 'Error processing PayPal refund: '.$e->getMessage()
             );
         }
     }
@@ -177,9 +178,9 @@ class PayPalPaymentService implements PaymentGateway
         try {
             $request = new OrdersGetRequest($paymentId);
             $response = $this->client->execute($request);
-            
+
             $success = $response->result->status === 'COMPLETED';
-            
+
             return new PaymentResult(
                 success: $success,
                 status: $response->result->status,
@@ -195,7 +196,7 @@ class PayPalPaymentService implements PaymentGateway
             return new PaymentResult(
                 success: false,
                 status: 'error',
-                message: 'Error retrieving PayPal status: ' . $e->getMessage()
+                message: 'Error retrieving PayPal status: '.$e->getMessage()
             );
         }
     }
@@ -215,4 +216,3 @@ class PayPalPaymentService implements PaymentGateway
         );
     }
 }
-

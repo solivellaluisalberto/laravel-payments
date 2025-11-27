@@ -34,7 +34,7 @@ class SendAdminNotification
             Log::info('📢 Admin notification sent', $notificationData);
 
             // En producción, podrías:
-            
+
             // 1. Enviar email al admin
             /*
             Mail::to($adminEmail)->send(

@@ -23,6 +23,7 @@ class UpdateInventory
                 Log::info('No items to update inventory', [
                     'order_id' => $event->orderId,
                 ]);
+
                 return;
             }
 
@@ -30,7 +31,7 @@ class UpdateInventory
                 $productId = $item['product_id'] ?? null;
                 $quantity = $item['quantity'] ?? 1;
 
-                if (!$productId) {
+                if (! $productId) {
                     continue;
                 }
 
@@ -44,15 +45,15 @@ class UpdateInventory
                 // En producción, usarías algo como:
                 /*
                 $product = Product::find($productId);
-                
+
                 if ($product) {
                     $product->decrement('stock', $quantity);
-                    
+
                     // Si el stock es bajo, notificar
                     if ($product->stock < $product->low_stock_threshold) {
                         event(new LowStockAlert($product));
                     }
-                    
+
                     // Si se agotó, notificar
                     if ($product->stock <= 0) {
                         event(new ProductOutOfStock($product));
@@ -62,10 +63,10 @@ class UpdateInventory
             }
 
             // También podrías:
-            
+
             // 1. Marcar productos como "reservados" durante el pago
             //    y confirmar la reserva aquí
-            
+
             // 2. Activar servicios/suscripciones
             /*
             if ($event->metadata['type'] === 'subscription') {
@@ -77,7 +78,7 @@ class UpdateInventory
                 ]);
             }
             */
-            
+
             // 3. Generar códigos de descarga para productos digitales
             /*
             if ($event->metadata['type'] === 'digital') {
@@ -95,7 +96,7 @@ class UpdateInventory
                 'order_id' => $event->orderId,
                 'error' => $e->getMessage(),
             ]);
-            
+
             // Esto es crítico: si falla, podríamos vender más de lo disponible
             // Considerar re-intentos o notificación de emergencia
         }

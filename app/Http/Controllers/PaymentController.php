@@ -8,7 +8,6 @@ use App\Enums\PaymentProvider;
 use App\Events\PaymentCompleted;
 use App\Services\Payments\PaymentManager;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
@@ -30,7 +29,7 @@ class PaymentController extends Controller
     public function stripeExample()
     {
         return view('payments.stripe', [
-            'publicKey' => config('payments.stripe.public_key')
+            'publicKey' => config('payments.stripe.public_key'),
         ]);
     }
 
@@ -41,13 +40,13 @@ class PaymentController extends Controller
     {
         try {
             $gateway = $this->paymentManager->driver(PaymentProvider::STRIPE);
-            
+
             $paymentRequest = new PaymentRequest(
                 amount: $request->input('amount', 50.00),
                 currency: 'EUR',
-                orderId: 'ORDER-' . time(),
+                orderId: 'ORDER-'.time(),
                 metadata: [
-                    'description' => 'Pago de prueba Stripe'
+                    'description' => 'Pago de prueba Stripe',
                 ]
             );
 
@@ -56,12 +55,12 @@ class PaymentController extends Controller
             return response()->json([
                 'success' => true,
                 'clientSecret' => $response->clientSecret,
-                'data' => $response->data
+                'data' => $response->data,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
@@ -92,12 +91,12 @@ class PaymentController extends Controller
             return response()->json([
                 'success' => $result->success,
                 'message' => $result->message,
-                'data' => $result
+                'data' => $result,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
@@ -117,16 +116,16 @@ class PaymentController extends Controller
     {
         try {
             $gateway = $this->paymentManager->driver(PaymentProvider::REDSYS);
-            
+
             $paymentMethod = $request->input('payment_method');
             $method = $paymentMethod === 'bizum' ? PaymentMethod::BIZUM : PaymentMethod::CARD;
-            
+
             $paymentRequest = new PaymentRequest(
                 amount: $request->input('amount', 50.00),
                 currency: 'EUR',
-                orderId: str_pad((string)time(), 12, '0', STR_PAD_LEFT),
+                orderId: str_pad((string) time(), 12, '0', STR_PAD_LEFT),
                 metadata: [
-                    'description' => 'Pago de prueba Redsys'
+                    'description' => 'Pago de prueba Redsys',
                 ],
                 returnUrl: route('payments.redsys.return'),
                 cancelUrl: route('payments.redsys.cancel'),
@@ -136,7 +135,7 @@ class PaymentController extends Controller
             $response = $gateway->initiate($paymentRequest);
 
             return view('payments.redsys-form', [
-                'formHtml' => $response->formHtml
+                'formHtml' => $response->formHtml,
             ]);
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
@@ -166,19 +165,19 @@ class PaymentController extends Controller
 
                 return view('payments.success', [
                     'provider' => 'Redsys',
-                    'result' => $result
+                    'result' => $result,
                 ]);
             } else {
                 return view('payments.error', [
                     'provider' => 'Redsys',
-                    'result' => $result
+                    'result' => $result,
                 ]);
             }
         } catch (\Exception $e) {
             return view('payments.error', [
                 'provider' => 'Redsys',
                 'result' => null,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -189,7 +188,7 @@ class PaymentController extends Controller
     public function redsysCancel()
     {
         return view('payments.cancelled', [
-            'provider' => 'Redsys'
+            'provider' => 'Redsys',
         ]);
     }
 
@@ -208,13 +207,13 @@ class PaymentController extends Controller
     {
         try {
             $gateway = $this->paymentManager->driver(PaymentProvider::PAYPAL);
-            
+
             $paymentRequest = new PaymentRequest(
                 amount: $request->input('amount', 50.00),
                 currency: 'EUR',
-                orderId: 'ORDER-' . time(),
+                orderId: 'ORDER-'.time(),
                 metadata: [
-                    'description' => 'Pago de prueba PayPal'
+                    'description' => 'Pago de prueba PayPal',
                 ],
                 returnUrl: route('payments.paypal.return'),
                 cancelUrl: route('payments.paypal.cancel')
@@ -235,8 +234,8 @@ class PaymentController extends Controller
     {
         try {
             $orderId = $request->query('token');
-            
-            if (!$orderId) {
+
+            if (! $orderId) {
                 throw new \Exception('No order ID provided');
             }
 
@@ -257,19 +256,19 @@ class PaymentController extends Controller
 
                 return view('payments.success', [
                     'provider' => 'PayPal',
-                    'result' => $result
+                    'result' => $result,
                 ]);
             } else {
                 return view('payments.error', [
                     'provider' => 'PayPal',
-                    'result' => $result
+                    'result' => $result,
                 ]);
             }
         } catch (\Exception $e) {
             return view('payments.error', [
                 'provider' => 'PayPal',
                 'result' => null,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -280,7 +279,7 @@ class PaymentController extends Controller
     public function paypalCancel()
     {
         return view('payments.cancelled', [
-            'provider' => 'PayPal'
+            'provider' => 'PayPal',
         ]);
     }
 
@@ -316,23 +315,22 @@ class PaymentController extends Controller
         try {
             $provider = PaymentProvider::from($request->input('provider'));
             $gateway = $this->paymentManager->driver($provider);
-            
+
             $result = $gateway->refund(
                 paymentId: $request->input('payment_id'),
-                amount: $request->input('amount') ? (float)$request->input('amount') : null
+                amount: $request->input('amount') ? (float) $request->input('amount') : null
             );
 
             return response()->json([
                 'success' => $result->success,
                 'message' => $result->message,
-                'data' => $result
+                'data' => $result,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
 }
-
