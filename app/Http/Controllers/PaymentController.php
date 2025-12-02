@@ -6,8 +6,13 @@ use App\DTOs\PaymentRequest;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentProvider;
 use App\Events\PaymentCompleted;
+use App\Exceptions\PaymentConfigurationException;
+use App\Exceptions\PaymentException;
+use App\Exceptions\PaymentProviderException;
+use App\Exceptions\PaymentValidationException;
 use App\Services\Payments\PaymentManager;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
@@ -57,10 +62,42 @@ class PaymentController extends Controller
                 'clientSecret' => $response->clientSecret,
                 'data' => $response->data,
             ]);
-        } catch (\Exception $e) {
+        } catch (PaymentConfigurationException $e) {
+            Log::critical('Stripe configuration error', $e->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Service temporarily unavailable. Please contact support.',
+            ], 503);
+        } catch (PaymentValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
+                'errors' => $e->getContext(),
+            ], 422);
+        } catch (PaymentProviderException $e) {
+            Log::error('Stripe provider error', $e->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment processing failed. Please try again.',
+            ], 502);
+        } catch (PaymentException $e) {
+            Log::error('Stripe payment error', $e->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], $e->getHttpStatusCode());
+        } catch (\Exception $e) {
+            Log::error('Unexpected error in Stripe payment', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred. Please try again.',
             ], 500);
         }
     }
@@ -93,10 +130,28 @@ class PaymentController extends Controller
                 'message' => $result->message,
                 'data' => $result,
             ]);
-        } catch (\Exception $e) {
+        } catch (PaymentProviderException $e) {
+            Log::error('Stripe verification error', $e->toArray());
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
+            ], $e->getHttpStatusCode());
+        } catch (PaymentException $e) {
+            Log::error('Payment verification error', $e->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], $e->getHttpStatusCode());
+        } catch (\Exception $e) {
+            Log::error('Unexpected error in payment verification', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred.',
             ], 500);
         }
     }
@@ -326,10 +381,32 @@ class PaymentController extends Controller
                 'message' => $result->message,
                 'data' => $result,
             ]);
-        } catch (\Exception $e) {
+        } catch (PaymentProviderException $e) {
+            Log::warning('Refund failed', [
+                'error' => $e->toArray(),
+                'payment_id' => $request->input('payment_id'),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
+            ], $e->getHttpStatusCode());
+        } catch (PaymentException $e) {
+            Log::error('Refund error', $e->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], $e->getHttpStatusCode());
+        } catch (\Exception $e) {
+            Log::error('Unexpected error processing refund', [
+                'message' => $e->getMessage(),
+                'provider' => $request->input('provider'),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred.',
             ], 500);
         }
     }

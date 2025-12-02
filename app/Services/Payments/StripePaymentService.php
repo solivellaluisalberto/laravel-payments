@@ -5,7 +5,10 @@ namespace App\Services\Payments;
 use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
+use App\Enums\PaymentProvider;
 use App\Enums\PaymentType;
+use App\Exceptions\PaymentConfigurationException;
+use App\Exceptions\PaymentProviderException;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
@@ -18,13 +21,14 @@ class StripePaymentService implements PaymentGateway
         $key = $apiKey ?? config('payments.stripe.secret_key');
 
         if (! $key) {
-            throw new \Exception(
-                'Stripe API key not configured. '.
-                'Set STRIPE_SECRET_KEY in .env or pass it to constructor.'
-            );
+            throw PaymentConfigurationException::missingCredentials('Stripe', 'secret_key');
         }
 
-        $this->stripe = new StripeClient($key);
+        try {
+            $this->stripe = new StripeClient($key);
+        } catch (\Exception $e) {
+            throw PaymentConfigurationException::invalidApiKey('Stripe');
+        }
     }
 
     public function initiate(PaymentRequest $request): PaymentResponse
@@ -51,7 +55,12 @@ class StripePaymentService implements PaymentGateway
                 clientSecret: $paymentIntent->client_secret
             );
         } catch (ApiErrorException $e) {
-            throw new \Exception('Error creating Stripe payment: '.$e->getMessage());
+            throw PaymentProviderException::apiError(
+                PaymentProvider::STRIPE,
+                $e->getMessage(),
+                $e->getStripeCode(),
+                $e
+            );
         }
     }
 
@@ -77,10 +86,15 @@ class StripePaymentService implements PaymentGateway
                 message: 'Payment not completed. Current status: '.$intent->status
             );
         } catch (ApiErrorException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error capturing payment: '.$e->getMessage()
+            if ($e->getHttpStatus() === 404) {
+                throw PaymentProviderException::paymentNotFound(PaymentProvider::STRIPE, $paymentId);
+            }
+
+            throw PaymentProviderException::apiError(
+                PaymentProvider::STRIPE,
+                $e->getMessage(),
+                $e->getStripeCode(),
+                $e
             );
         }
     }
@@ -123,10 +137,23 @@ class StripePaymentService implements PaymentGateway
                 message: 'Refund status: '.$refund->status
             );
         } catch (ApiErrorException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error processing refund: '.$e->getMessage()
+            if ($e->getHttpStatus() === 404) {
+                throw PaymentProviderException::paymentNotFound(PaymentProvider::STRIPE, $paymentId);
+            }
+
+            // Stripe puede rechazar reembolsos por varias razones
+            if (str_contains($e->getMessage(), 'has already been refunded')) {
+                throw PaymentProviderException::refundNotAvailable(
+                    PaymentProvider::STRIPE,
+                    'Payment has already been refunded'
+                );
+            }
+
+            throw PaymentProviderException::apiError(
+                PaymentProvider::STRIPE,
+                $e->getMessage(),
+                $e->getStripeCode(),
+                $e
             );
         }
     }
@@ -148,10 +175,15 @@ class StripePaymentService implements PaymentGateway
                 ]
             );
         } catch (ApiErrorException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error retrieving payment status: '.$e->getMessage()
+            if ($e->getHttpStatus() === 404) {
+                throw PaymentProviderException::paymentNotFound(PaymentProvider::STRIPE, $paymentId);
+            }
+
+            throw PaymentProviderException::apiError(
+                PaymentProvider::STRIPE,
+                $e->getMessage(),
+                $e->getStripeCode(),
+                $e
             );
         }
     }

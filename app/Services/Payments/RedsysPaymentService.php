@@ -5,7 +5,10 @@ namespace App\Services\Payments;
 use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
+use App\Enums\PaymentProvider;
 use App\Enums\PaymentType;
+use App\Exceptions\PaymentConfigurationException;
+use App\Exceptions\PaymentProviderException;
 use Sermepa\Tpv\Tpv;
 use Sermepa\Tpv\TpvException;
 
@@ -31,16 +34,15 @@ class RedsysPaymentService implements PaymentGateway
         $this->environment = $environment ?? config('payments.redsys.environment', 'test');
 
         if (! $this->merchantCode) {
-            throw new \Exception(
-                'Redsys Merchant Code not configured. '.
-                'Set REDSYS_MERCHANT_CODE in .env or pass it to constructor.'
-            );
+            throw PaymentConfigurationException::missingCredentials('Redsys', 'merchant_code');
         }
         if (! $this->secretKey) {
-            throw new \Exception(
-                'Redsys Secret Key not configured. '.
-                'Set REDSYS_SECRET_KEY in .env or pass it to constructor.'
-            );
+            throw PaymentConfigurationException::missingCredentials('Redsys', 'secret_key');
+        }
+
+        // Validar entorno
+        if (! in_array($this->environment, ['test', 'live'])) {
+            throw PaymentConfigurationException::invalidEnvironment('Redsys', $this->environment);
         }
     }
 
@@ -91,7 +93,12 @@ class RedsysPaymentService implements PaymentGateway
                 formHtml: $formHtml
             );
         } catch (TpvException $e) {
-            throw new \Exception('Redsys TPV Error: '.$e->getMessage());
+            throw PaymentProviderException::apiError(
+                PaymentProvider::REDSYS,
+                $e->getMessage(),
+                null,
+                $e
+            );
         }
     }
 
@@ -127,7 +134,11 @@ class RedsysPaymentService implements PaymentGateway
             $response = json_decode($tpv->send(), true);
 
             if (isset($response['errorCode'])) {
-                throw new \Exception('Redsys API Error: '.$response['errorCode']);
+                throw PaymentProviderException::apiError(
+                    PaymentProvider::REDSYS,
+                    'Refund failed',
+                    $response['errorCode']
+                );
             }
 
             $parameters = $tpv->getMerchantParameters($response['Ds_MerchantParameters']);
@@ -141,23 +152,26 @@ class RedsysPaymentService implements PaymentGateway
                     message: 'Refund processed successfully.'
                 );
             } else {
-                return new PaymentResult(
-                    success: false,
-                    status: 'failed',
-                    message: 'Redsys refund failed or signature mismatch. Response: '.json_encode($parameters)
+                throw PaymentProviderException::refundNotAvailable(
+                    PaymentProvider::REDSYS,
+                    'Response code: '.$dsResponse
                 );
             }
         } catch (TpvException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Redsys TPV Error: '.$e->getMessage()
+            throw PaymentProviderException::apiError(
+                PaymentProvider::REDSYS,
+                $e->getMessage(),
+                null,
+                $e
             );
+        } catch (PaymentProviderException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error processing Redsys refund: '.$e->getMessage()
+            throw PaymentProviderException::apiError(
+                PaymentProvider::REDSYS,
+                'Error processing refund: '.$e->getMessage(),
+                null,
+                $e
             );
         }
     }
@@ -183,12 +197,15 @@ class RedsysPaymentService implements PaymentGateway
             $tpv = new Tpv;
 
             if (! isset($postData['Ds_MerchantParameters']) || ! isset($postData['Ds_Signature'])) {
-                throw new \Exception('Invalid callback data from Redsys');
+                throw PaymentProviderException::invalidResponse(
+                    PaymentProvider::REDSYS,
+                    'Missing required parameters'
+                );
             }
 
             // Verificar firma
             if (! $tpv->check($this->secretKey, $postData)) {
-                throw new \Exception('Invalid signature from Redsys');
+                throw PaymentProviderException::signatureVerificationFailed(PaymentProvider::REDSYS);
             }
 
             // Decodificar parámetros
@@ -198,6 +215,14 @@ class RedsysPaymentService implements PaymentGateway
             // Respuestas 0-99 son exitosas en Redsys
             $success = $dsResponse >= 0 && $dsResponse <= 99;
 
+            if (! $success && $dsResponse !== 9999) {
+                throw PaymentProviderException::paymentDeclined(
+                    PaymentProvider::REDSYS,
+                    'Payment declined by bank',
+                    (string) $dsResponse
+                );
+            }
+
             return new PaymentResult(
                 success: $success,
                 status: $success ? 'completed' : 'failed',
@@ -206,11 +231,12 @@ class RedsysPaymentService implements PaymentGateway
                 message: $success ? 'Payment completed successfully' : 'Payment failed',
                 data: $parameters
             );
+        } catch (PaymentProviderException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error verifying Redsys callback: '.$e->getMessage()
+            throw PaymentProviderException::invalidResponse(
+                PaymentProvider::REDSYS,
+                $e->getMessage()
             );
         }
     }

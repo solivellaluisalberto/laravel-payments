@@ -5,7 +5,10 @@ namespace App\Services\Payments;
 use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
+use App\Enums\PaymentProvider;
 use App\Enums\PaymentType;
+use App\Exceptions\PaymentConfigurationException;
+use App\Exceptions\PaymentProviderException;
 use PayPalCheckoutSdk\Core\PayPalHttpClient;
 use PayPalCheckoutSdk\Core\ProductionEnvironment;
 use PayPalCheckoutSdk\Core\SandboxEnvironment;
@@ -31,23 +34,26 @@ class PayPalPaymentService implements PaymentGateway
         $this->environment = $environment ?? config('payments.paypal.environment', 'sandbox');
 
         if (! $clientId) {
-            throw new \Exception(
-                'PayPal Client ID not configured. '.
-                'Set PAYPAL_CLIENT_ID in .env or pass it to constructor.'
-            );
+            throw PaymentConfigurationException::missingCredentials('PayPal', 'client_id');
         }
         if (! $clientSecret) {
-            throw new \Exception(
-                'PayPal Client Secret not configured. '.
-                'Set PAYPAL_CLIENT_SECRET in .env or pass it to constructor.'
-            );
+            throw PaymentConfigurationException::missingCredentials('PayPal', 'client_secret');
         }
 
-        $env = $this->environment === 'live'
-            ? new ProductionEnvironment($clientId, $clientSecret)
-            : new SandboxEnvironment($clientId, $clientSecret);
+        // Validar entorno
+        if (! in_array($this->environment, ['sandbox', 'live'])) {
+            throw PaymentConfigurationException::invalidEnvironment('PayPal', $this->environment);
+        }
 
-        $this->client = new PayPalHttpClient($env);
+        try {
+            $env = $this->environment === 'live'
+                ? new ProductionEnvironment($clientId, $clientSecret)
+                : new SandboxEnvironment($clientId, $clientSecret);
+
+            $this->client = new PayPalHttpClient($env);
+        } catch (\Exception $e) {
+            throw PaymentConfigurationException::invalidApiKey('PayPal');
+        }
     }
 
     public function initiate(PaymentRequest $request): PaymentResponse
@@ -87,6 +93,13 @@ class PayPalPaymentService implements PaymentGateway
                 }
             }
 
+            if (! $approveLink) {
+                throw PaymentProviderException::invalidResponse(
+                    PaymentProvider::PAYPAL,
+                    'Approval link not found in response'
+                );
+            }
+
             return new PaymentResponse(
                 type: PaymentType::REDIRECT,
                 data: [
@@ -98,7 +111,13 @@ class PayPalPaymentService implements PaymentGateway
                 redirectUrl: $approveLink
             );
         } catch (HttpException $e) {
-            throw new \Exception('PayPal API Error: '.$e->getMessage());
+            $errorCode = $e->statusCode ?? null;
+            throw PaymentProviderException::apiError(
+                PaymentProvider::PAYPAL,
+                $e->getMessage(),
+                $errorCode ? (string) $errorCode : null,
+                $e
+            );
         }
     }
 
@@ -120,10 +139,15 @@ class PayPalPaymentService implements PaymentGateway
                 message: $success ? 'Payment captured successfully' : 'Payment status: '.$response->result->status
             );
         } catch (HttpException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error capturing PayPal payment: '.$e->getMessage()
+            if ($e->statusCode === 404) {
+                throw PaymentProviderException::paymentNotFound(PaymentProvider::PAYPAL, $paymentId);
+            }
+
+            throw PaymentProviderException::apiError(
+                PaymentProvider::PAYPAL,
+                $e->getMessage(),
+                $e->statusCode ? (string) $e->statusCode : null,
+                $e
             );
         }
     }
@@ -138,7 +162,10 @@ class PayPalPaymentService implements PaymentGateway
             $captureId = $orderResponse->result->purchase_units[0]->payments->captures[0]->id ?? null;
 
             if (! $captureId) {
-                throw new \Exception('No capture found for this payment');
+                throw PaymentProviderException::refundNotAvailable(
+                    PaymentProvider::PAYPAL,
+                    'No capture found for this payment'
+                );
             }
 
             // Crear el refund
@@ -165,11 +192,18 @@ class PayPalPaymentService implements PaymentGateway
                 message: $success ? 'Refund processed successfully' : 'Refund status: '.$response->result->status
             );
         } catch (HttpException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error processing PayPal refund: '.$e->getMessage()
+            if ($e->statusCode === 404) {
+                throw PaymentProviderException::paymentNotFound(PaymentProvider::PAYPAL, $paymentId);
+            }
+
+            throw PaymentProviderException::apiError(
+                PaymentProvider::PAYPAL,
+                $e->getMessage(),
+                $e->statusCode ? (string) $e->statusCode : null,
+                $e
             );
+        } catch (PaymentProviderException $e) {
+            throw $e;
         }
     }
 
@@ -193,10 +227,15 @@ class PayPalPaymentService implements PaymentGateway
                 ]
             );
         } catch (HttpException $e) {
-            return new PaymentResult(
-                success: false,
-                status: 'error',
-                message: 'Error retrieving PayPal status: '.$e->getMessage()
+            if ($e->statusCode === 404) {
+                throw PaymentProviderException::paymentNotFound(PaymentProvider::PAYPAL, $paymentId);
+            }
+
+            throw PaymentProviderException::apiError(
+                PaymentProvider::PAYPAL,
+                $e->getMessage(),
+                $e->statusCode ? (string) $e->statusCode : null,
+                $e
             );
         }
     }

@@ -7,6 +7,7 @@ enum PaymentMethod: string
     case CARD = 'card';
     case BIZUM = 'bizum';
     case CASH = 'cash';
+    case PAYPAL = 'paypal';
 
     /**
      * Obtener el código de método de pago para Redsys
@@ -18,6 +19,7 @@ enum PaymentMethod: string
             self::CARD => 'T',    // T = Solo tarjeta (no iupay)
             self::BIZUM => 'z',   // z = Bizum
             self::CASH => 'C',    // C = Todos los métodos disponibles
+            self::PAYPAL => 'PayPal',    // PayPal = PayPal
         };
     }
 
@@ -27,6 +29,7 @@ enum PaymentMethod: string
             self::CARD => 'Tarjeta',
             self::BIZUM => 'Bizum',
             self::CASH => 'Efectivo',
+            self::PAYPAL => 'PayPal',
         };
     }
 }
