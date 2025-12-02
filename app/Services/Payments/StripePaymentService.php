@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Concerns\LogsPayments;
 use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
@@ -14,6 +15,8 @@ use Stripe\StripeClient;
 
 class StripePaymentService implements PaymentGateway
 {
+    use LogsPayments;
+
     private StripeClient $stripe;
 
     public function __construct(?string $apiKey = null)
@@ -33,6 +36,8 @@ class StripePaymentService implements PaymentGateway
 
     public function initiate(PaymentRequest $request): PaymentResponse
     {
+        $this->logPaymentAttempt(PaymentProvider::STRIPE, $request);
+
         try {
             $paymentIntent = $this->stripe->paymentIntents->create([
                 'amount' => (int) ($request->amount * 100), // Convertir a centavos
@@ -45,7 +50,7 @@ class StripePaymentService implements PaymentGateway
                 ],
             ]);
 
-            return new PaymentResponse(
+            $response = new PaymentResponse(
                 type: PaymentType::API,
                 data: [
                     'payment_intent_id' => $paymentIntent->id,
@@ -54,7 +59,13 @@ class StripePaymentService implements PaymentGateway
                 ],
                 clientSecret: $paymentIntent->client_secret
             );
+
+            $this->logPaymentInitiated(PaymentProvider::STRIPE, $request, $response);
+
+            return $response;
         } catch (ApiErrorException $e) {
+            $this->logPaymentError(PaymentProvider::STRIPE, $e, $request->orderId);
+
             throw PaymentProviderException::apiError(
                 PaymentProvider::STRIPE,
                 $e->getMessage(),
@@ -69,23 +80,26 @@ class StripePaymentService implements PaymentGateway
         try {
             $intent = $this->stripe->paymentIntents->retrieve($paymentId);
 
-            if ($intent->status === 'succeeded') {
-                return new PaymentResult(
-                    success: true,
-                    status: 'completed',
-                    paymentId: $paymentId,
-                    transactionId: $intent->charges->data[0]->id ?? $paymentId,
-                    message: 'Payment captured successfully.'
-                );
+            $result = new PaymentResult(
+                success: $intent->status === 'succeeded',
+                status: $intent->status === 'succeeded' ? 'completed' : $intent->status,
+                paymentId: $paymentId,
+                transactionId: $intent->charges->data[0]->id ?? $paymentId,
+                message: $intent->status === 'succeeded'
+                    ? 'Payment captured successfully.'
+                    : 'Payment not completed. Current status: '.$intent->status
+            );
+
+            if ($result->success) {
+                $this->logPaymentSuccess(PaymentProvider::STRIPE, $result);
+            } else {
+                $this->logPaymentFailed(PaymentProvider::STRIPE, $result);
             }
 
-            return new PaymentResult(
-                success: false,
-                status: $intent->status,
-                paymentId: $paymentId,
-                message: 'Payment not completed. Current status: '.$intent->status
-            );
+            return $result;
         } catch (ApiErrorException $e) {
+            $this->logPaymentError(PaymentProvider::STRIPE, $e, $paymentId);
+
             if ($e->getHttpStatus() === 404) {
                 throw PaymentProviderException::paymentNotFound(PaymentProvider::STRIPE, $paymentId);
             }
@@ -101,6 +115,8 @@ class StripePaymentService implements PaymentGateway
 
     public function refund(string $paymentId, ?float $amount = null): PaymentResult
     {
+        $this->logRefundAttempt(PaymentProvider::STRIPE, $paymentId, $amount);
+
         try {
             // Determinar si es un payment_intent o un charge
             $refundData = [];
@@ -122,21 +138,24 @@ class StripePaymentService implements PaymentGateway
 
             $refund = $this->stripe->refunds->create($refundData);
 
-            if ($refund->status === 'succeeded') {
-                return new PaymentResult(
-                    success: true,
-                    status: 'refunded',
-                    transactionId: $refund->id,
-                    message: 'Refund processed successfully.'
-                );
+            $result = new PaymentResult(
+                success: $refund->status === 'succeeded',
+                status: $refund->status === 'succeeded' ? 'refunded' : $refund->status,
+                transactionId: $refund->id,
+                message: $refund->status === 'succeeded'
+                    ? 'Refund processed successfully.'
+                    : 'Refund status: '.$refund->status
+            );
+
+            if ($result->success) {
+                $this->logRefundSuccess(PaymentProvider::STRIPE, $result);
+            } else {
+                $this->logRefundFailed(PaymentProvider::STRIPE, $result);
             }
 
-            return new PaymentResult(
-                success: false,
-                status: $refund->status,
-                message: 'Refund status: '.$refund->status
-            );
+            return $result;
         } catch (ApiErrorException $e) {
+            $this->logPaymentError(PaymentProvider::STRIPE, $e, $paymentId);
             if ($e->getHttpStatus() === 404) {
                 throw PaymentProviderException::paymentNotFound(PaymentProvider::STRIPE, $paymentId);
             }
@@ -160,6 +179,8 @@ class StripePaymentService implements PaymentGateway
 
     public function getStatus(string $paymentId): PaymentResult
     {
+        $this->logStatusCheck(PaymentProvider::STRIPE, $paymentId);
+
         try {
             $intent = $this->stripe->paymentIntents->retrieve($paymentId);
 
@@ -175,6 +196,8 @@ class StripePaymentService implements PaymentGateway
                 ]
             );
         } catch (ApiErrorException $e) {
+            $this->logPaymentError(PaymentProvider::STRIPE, $e, $paymentId);
+
             if ($e->getHttpStatus() === 404) {
                 throw PaymentProviderException::paymentNotFound(PaymentProvider::STRIPE, $paymentId);
             }

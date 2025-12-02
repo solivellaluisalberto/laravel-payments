@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Concerns\LogsPayments;
 use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
@@ -20,6 +21,7 @@ use PayPalHttp\HttpException;
 
 class PayPalPaymentService implements PaymentGateway
 {
+    use LogsPayments;
     private PayPalHttpClient $client;
 
     private string $environment;
@@ -58,6 +60,8 @@ class PayPalPaymentService implements PaymentGateway
 
     public function initiate(PaymentRequest $request): PaymentResponse
     {
+        $this->logPaymentAttempt(PaymentProvider::PAYPAL, $request);
+
         try {
             $paypalRequest = new OrdersCreateRequest;
             $paypalRequest->prefer('return=representation');
@@ -100,7 +104,7 @@ class PayPalPaymentService implements PaymentGateway
                 );
             }
 
-            return new PaymentResponse(
+            $paymentResponse = new PaymentResponse(
                 type: PaymentType::REDIRECT,
                 data: [
                     'order_id' => $response->result->id,
@@ -110,7 +114,13 @@ class PayPalPaymentService implements PaymentGateway
                 ],
                 redirectUrl: $approveLink
             );
+
+            $this->logPaymentInitiated(PaymentProvider::PAYPAL, $request, $paymentResponse);
+
+            return $paymentResponse;
         } catch (HttpException $e) {
+            $this->logPaymentError(PaymentProvider::PAYPAL, $e, $request->orderId);
+
             $errorCode = $e->statusCode ?? null;
             throw PaymentProviderException::apiError(
                 PaymentProvider::PAYPAL,
@@ -131,14 +141,24 @@ class PayPalPaymentService implements PaymentGateway
 
             $success = $response->result->status === 'COMPLETED';
 
-            return new PaymentResult(
+            $result = new PaymentResult(
                 success: $success,
                 status: $success ? 'completed' : $response->result->status,
                 paymentId: $paymentId,
                 transactionId: $response->result->purchase_units[0]->payments->captures[0]->id ?? null,
                 message: $success ? 'Payment captured successfully' : 'Payment status: '.$response->result->status
             );
+
+            if ($result->success) {
+                $this->logPaymentSuccess(PaymentProvider::PAYPAL, $result);
+            } else {
+                $this->logPaymentFailed(PaymentProvider::PAYPAL, $result);
+            }
+
+            return $result;
         } catch (HttpException $e) {
+            $this->logPaymentError(PaymentProvider::PAYPAL, $e, $paymentId);
+
             if ($e->statusCode === 404) {
                 throw PaymentProviderException::paymentNotFound(PaymentProvider::PAYPAL, $paymentId);
             }
@@ -154,6 +174,8 @@ class PayPalPaymentService implements PaymentGateway
 
     public function refund(string $paymentId, ?float $amount = null): PaymentResult
     {
+        $this->logRefundAttempt(PaymentProvider::PAYPAL, $paymentId, $amount);
+
         try {
             // Primero obtener el capture ID
             $orderRequest = new OrdersGetRequest($paymentId);
@@ -185,13 +207,23 @@ class PayPalPaymentService implements PaymentGateway
 
             $success = $response->result->status === 'COMPLETED';
 
-            return new PaymentResult(
+            $result = new PaymentResult(
                 success: $success,
                 status: $success ? 'refunded' : $response->result->status,
                 transactionId: $response->result->id,
                 message: $success ? 'Refund processed successfully' : 'Refund status: '.$response->result->status
             );
+
+            if ($result->success) {
+                $this->logRefundSuccess(PaymentProvider::PAYPAL, $result);
+            } else {
+                $this->logRefundFailed(PaymentProvider::PAYPAL, $result);
+            }
+
+            return $result;
         } catch (HttpException $e) {
+            $this->logPaymentError(PaymentProvider::PAYPAL, $e, $paymentId);
+
             if ($e->statusCode === 404) {
                 throw PaymentProviderException::paymentNotFound(PaymentProvider::PAYPAL, $paymentId);
             }
@@ -203,12 +235,15 @@ class PayPalPaymentService implements PaymentGateway
                 $e
             );
         } catch (PaymentProviderException $e) {
+            $this->logPaymentError(PaymentProvider::PAYPAL, $e, $paymentId);
             throw $e;
         }
     }
 
     public function getStatus(string $paymentId): PaymentResult
     {
+        $this->logStatusCheck(PaymentProvider::PAYPAL, $paymentId);
+
         try {
             $request = new OrdersGetRequest($paymentId);
             $response = $this->client->execute($request);
@@ -227,6 +262,8 @@ class PayPalPaymentService implements PaymentGateway
                 ]
             );
         } catch (HttpException $e) {
+            $this->logPaymentError(PaymentProvider::PAYPAL, $e, $paymentId);
+
             if ($e->statusCode === 404) {
                 throw PaymentProviderException::paymentNotFound(PaymentProvider::PAYPAL, $paymentId);
             }

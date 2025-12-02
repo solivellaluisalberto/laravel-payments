@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Concerns\LogsPayments;
 use App\DTOs\PaymentRequest;
 use App\DTOs\PaymentResponse;
 use App\DTOs\PaymentResult;
@@ -14,6 +15,7 @@ use Sermepa\Tpv\TpvException;
 
 class RedsysPaymentService implements PaymentGateway
 {
+    use LogsPayments;
     private string $merchantCode;
 
     private string $secretKey;
@@ -48,6 +50,8 @@ class RedsysPaymentService implements PaymentGateway
 
     public function initiate(PaymentRequest $request): PaymentResponse
     {
+        $this->logPaymentAttempt(PaymentProvider::REDSYS, $request);
+
         try {
             $tpv = new Tpv;
 
@@ -82,7 +86,7 @@ class RedsysPaymentService implements PaymentGateway
             // Generar formulario HTML
             $formHtml = $tpv->createForm();
 
-            return new PaymentResponse(
+            $response = new PaymentResponse(
                 type: PaymentType::REDIRECT,
                 data: [
                     'order_id' => $request->orderId,
@@ -92,7 +96,13 @@ class RedsysPaymentService implements PaymentGateway
                 ],
                 formHtml: $formHtml
             );
+
+            $this->logPaymentInitiated(PaymentProvider::REDSYS, $request, $response);
+
+            return $response;
         } catch (TpvException $e) {
+            $this->logPaymentError(PaymentProvider::REDSYS, $e, $request->orderId);
+
             throw PaymentProviderException::apiError(
                 PaymentProvider::REDSYS,
                 $e->getMessage(),
@@ -117,6 +127,8 @@ class RedsysPaymentService implements PaymentGateway
 
     public function refund(string $paymentId, ?float $amount = null): PaymentResult
     {
+        $this->logRefundAttempt(PaymentProvider::REDSYS, $paymentId, $amount);
+
         try {
             $tpv = new Tpv;
             $tpv->setAmount($amount);
@@ -145,12 +157,16 @@ class RedsysPaymentService implements PaymentGateway
             $dsResponse = (int) $parameters['Ds_Response'];
 
             if ($tpv->check($this->secretKey, $response) && $dsResponse <= 99) {
-                return new PaymentResult(
+                $result = new PaymentResult(
                     success: true,
                     status: 'refunded',
                     transactionId: $parameters['Ds_AuthorisationCode'] ?? $paymentId,
                     message: 'Refund processed successfully.'
                 );
+
+                $this->logRefundSuccess(PaymentProvider::REDSYS, $result);
+
+                return $result;
             } else {
                 throw PaymentProviderException::refundNotAvailable(
                     PaymentProvider::REDSYS,
@@ -158,6 +174,7 @@ class RedsysPaymentService implements PaymentGateway
                 );
             }
         } catch (TpvException $e) {
+            $this->logPaymentError(PaymentProvider::REDSYS, $e, $paymentId);
             throw PaymentProviderException::apiError(
                 PaymentProvider::REDSYS,
                 $e->getMessage(),
@@ -165,8 +182,11 @@ class RedsysPaymentService implements PaymentGateway
                 $e
             );
         } catch (PaymentProviderException $e) {
+            $this->logPaymentError(PaymentProvider::REDSYS, $e, $paymentId);
             throw $e;
         } catch (\Exception $e) {
+            $this->logPaymentError(PaymentProvider::REDSYS, $e, $paymentId);
+
             throw PaymentProviderException::apiError(
                 PaymentProvider::REDSYS,
                 'Error processing refund: '.$e->getMessage(),
@@ -193,6 +213,8 @@ class RedsysPaymentService implements PaymentGateway
      */
     public function verifyCallback(array $postData): PaymentResult
     {
+        $this->logCallbackReceived(PaymentProvider::REDSYS, $postData);
+
         try {
             $tpv = new Tpv;
 
@@ -223,7 +245,7 @@ class RedsysPaymentService implements PaymentGateway
                 );
             }
 
-            return new PaymentResult(
+            $result = new PaymentResult(
                 success: $success,
                 status: $success ? 'completed' : 'failed',
                 paymentId: $parameters['Ds_Order'] ?? null,
@@ -231,9 +253,20 @@ class RedsysPaymentService implements PaymentGateway
                 message: $success ? 'Payment completed successfully' : 'Payment failed',
                 data: $parameters
             );
+
+            if ($result->success) {
+                $this->logPaymentSuccess(PaymentProvider::REDSYS, $result);
+            } else {
+                $this->logPaymentFailed(PaymentProvider::REDSYS, $result);
+            }
+
+            return $result;
         } catch (PaymentProviderException $e) {
+            $this->logPaymentError(PaymentProvider::REDSYS, $e);
             throw $e;
         } catch (\Exception $e) {
+            $this->logPaymentError(PaymentProvider::REDSYS, $e);
+
             throw PaymentProviderException::invalidResponse(
                 PaymentProvider::REDSYS,
                 $e->getMessage()
