@@ -81,7 +81,7 @@ class PaymentConfigurationException extends PaymentException
         );
     }
 
-    protected function getHttpStatusCode(): int
+    public function getHttpStatusCode(): int
     {
         return 500; // Internal Server Error
     }

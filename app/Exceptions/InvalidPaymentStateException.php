@@ -134,7 +134,7 @@ class InvalidPaymentStateException extends PaymentException
         );
     }
 
-    protected function getHttpStatusCode(): int
+    public function getHttpStatusCode(): int
     {
         return 409; // Conflict
     }

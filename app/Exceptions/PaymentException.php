@@ -63,7 +63,7 @@ class PaymentException extends Exception
     /**
      * Obtener el código de estado HTTP apropiado
      */
-    protected function getHttpStatusCode(): int
+    public function getHttpStatusCode(): int
     {
         return 500;
     }

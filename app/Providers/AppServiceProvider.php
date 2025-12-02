@@ -7,6 +7,7 @@ use App\Listeners\LogPaymentToDatabase;
 use App\Listeners\SendAdminNotification;
 use App\Listeners\SendPaymentConfirmationEmail;
 use App\Listeners\UpdateInventory;
+use App\Services\Payments\PaymentManager;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -17,7 +18,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton('payment-manager', function ($app) {
+            return new PaymentManager();
+        });
     }
 
     /**

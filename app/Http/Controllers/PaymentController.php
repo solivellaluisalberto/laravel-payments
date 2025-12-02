@@ -10,15 +10,12 @@ use App\Exceptions\PaymentConfigurationException;
 use App\Exceptions\PaymentException;
 use App\Exceptions\PaymentProviderException;
 use App\Exceptions\PaymentValidationException;
-use App\Services\Payments\PaymentManager;
+use App\Facades\Payment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
-    public function __construct(
-        private PaymentManager $paymentManager
-    ) {}
 
     /**
      * Mostrar página principal con ejemplos
@@ -44,7 +41,7 @@ class PaymentController extends Controller
     public function stripeInitiate(Request $request)
     {
         try {
-            $gateway = $this->paymentManager->driver(PaymentProvider::STRIPE);
+            $gateway = Payment::driver(PaymentProvider::STRIPE);
 
             $paymentRequest = new PaymentRequest(
                 amount: $request->input('amount', 50.00),
@@ -108,7 +105,7 @@ class PaymentController extends Controller
     public function stripeVerify(Request $request)
     {
         try {
-            $gateway = $this->paymentManager->driver(PaymentProvider::STRIPE);
+            $gateway = Payment::driver(PaymentProvider::STRIPE);
             $paymentIntent = $request->input('payment_intent');
             $result = $gateway->capture($paymentIntent);
 
@@ -170,7 +167,7 @@ class PaymentController extends Controller
     public function redsysInitiate(Request $request)
     {
         try {
-            $gateway = $this->paymentManager->driver(PaymentProvider::REDSYS);
+            $gateway = Payment::driver(PaymentProvider::REDSYS);
 
             $paymentMethod = $request->input('payment_method');
             $method = $paymentMethod === 'bizum' ? PaymentMethod::BIZUM : PaymentMethod::CARD;
@@ -203,7 +200,7 @@ class PaymentController extends Controller
     public function redsysReturn(Request $request)
     {
         try {
-            $gateway = $this->paymentManager->driver(PaymentProvider::REDSYS);
+            $gateway = Payment::driver(PaymentProvider::REDSYS);
             $result = $gateway->verifyCallback($request->all());
 
             if ($result->success) {
@@ -261,7 +258,7 @@ class PaymentController extends Controller
     public function paypalInitiate(Request $request)
     {
         try {
-            $gateway = $this->paymentManager->driver(PaymentProvider::PAYPAL);
+            $gateway = Payment::driver(PaymentProvider::PAYPAL);
 
             $paymentRequest = new PaymentRequest(
                 amount: $request->input('amount', 50.00),
@@ -271,7 +268,7 @@ class PaymentController extends Controller
                     'description' => 'Pago de prueba PayPal',
                 ],
                 returnUrl: route('payments.paypal.return'),
-                cancelUrl: route('payments.paypal.cancel')
+                cancelUrl: route('payments.paypal.cancel'),
             );
 
             $response = $gateway->initiate($paymentRequest);
@@ -294,7 +291,7 @@ class PaymentController extends Controller
                 throw new \Exception('No order ID provided');
             }
 
-            $gateway = $this->paymentManager->driver(PaymentProvider::PAYPAL);
+            $gateway = Payment::driver(PaymentProvider::PAYPAL);
             $result = $gateway->capture($orderId);
 
             if ($result->success) {
@@ -369,7 +366,7 @@ class PaymentController extends Controller
     {
         try {
             $provider = PaymentProvider::from($request->input('provider'));
-            $gateway = $this->paymentManager->driver($provider);
+            $gateway = Payment::driver($provider);
 
             $result = $gateway->refund(
                 paymentId: $request->input('payment_id'),

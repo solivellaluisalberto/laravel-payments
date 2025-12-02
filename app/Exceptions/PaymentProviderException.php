@@ -141,7 +141,7 @@ class PaymentProviderException extends PaymentException
         );
     }
 
-    protected function getHttpStatusCode(): int
+    public function getHttpStatusCode(): int
     {
         return match ($this->code) {
             2005 => 402, // Payment Required
